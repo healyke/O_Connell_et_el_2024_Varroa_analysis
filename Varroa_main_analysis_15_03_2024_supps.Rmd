@@ -2398,7 +2398,7 @@ Taking from the Full_comb_data, which has the signs flipped so any positive
 number is a positive effect for bees (i.e. decreased bee mortality is now a 
 positive number).
 
-```{r dosage ordinal}
+```{r dosage ordinal setup}
 
 Full_dosage <- data.frame(logratio = Full_comb_data$logratio,
                           StudyID = Full_comb_data$StudyID,
@@ -2417,7 +2417,7 @@ Full_dosage <- na.omit(Full_dosage)
 
 Ordinal dosage analysis.
 
-```{r dosage ordinal model}
+```{r dosage ordinal model 2}
 
 
 mod_dos <- MCMCglmm(logratio ~ Dosage_level,

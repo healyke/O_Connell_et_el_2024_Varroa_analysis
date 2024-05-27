@@ -859,6 +859,7 @@ with no other significant effects.
 This is with the original data so remember that a positive value here is something
 that decreases bee pops. There is 37 studies here. 6 biological studies, 25 with
 organic chemicals, 10 synthetic chemicals and 1 mixed study.
+
 ```{r bee decrease}
 
 mod_HoneyBeeReduction <- MCMCglmm(logratio ~ chem_split,
@@ -955,7 +956,7 @@ Similar to the analysis where the chemicals are split into organic and synthetic
 # Controls that measure decreases varroa pops
 
  There is 101 studies here.
-```{r bee decrease}
+```{r varroa decrease}
 
 mod_VarroaReduction_paired_fin <- MCMCglmm(logratio ~ chem_split,
                                  rcov=~units,
@@ -1363,7 +1364,7 @@ Nothing here but not enough data really.
 Model checking each chemical on Varroa Increase
 only 24 studies.
 
-```{r chemical breakdown HR}
+```{r chemical breakdown VI}
 
 temp_Sub_chem_VI <- VarroaIncrease_paired_red_fin
 
@@ -1381,7 +1382,7 @@ c("Amitraz",
 ```
 
 
-```{r chem specific model HR}
+```{r chem specific model VI}
 
 
 mod_spec_chem_VI <- MCMCglmm(logratio ~ broadTreatment,
@@ -1414,7 +1415,7 @@ compared to the control.
 
 Model checking each chemical on Varroa decreases 72 studies.
 
-```{r chemical breakdown HR}
+```{r chemical breakdown VR}
 
 temp_Sub_chem_VR <- VarroaReduction_paired_fin
 
