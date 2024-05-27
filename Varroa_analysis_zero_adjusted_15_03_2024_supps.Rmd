@@ -1,0 +1,1512 @@
+---
+title: "Varroa"
+author: "Kevin Healy"
+date: "2023-08-08"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Varroa Analysis
+
+This document outlines the code used for the analysis in O'Connell et al 2024 
+regarding the effects of various treatments on Varroa based on a literature 
+search (see main manuscript for details). The analysis measures the effect of
+various treatments using the log ratio between the treatment and its associated
+control. This approach allows us to compared values from various sources 
+and treatments from a wide general perspective. 
+
+
+
+# Load up Packages
+
+We will use the MCMCglmm package which allows us to run mixed effects models in 
+a Bayesian framework. 
+
+```{r packages}
+
+library(MCMCglmm)
+
+```
+
+
+# Data
+
+The raw data set Varroa_treatment_database_2023.10.27.csv can be found in the 
+supplementary of the manuscript. Once loaded we will also create a new 
+variable which further splits the category Chemical into "Synthetic" and 
+"Agriculturally_Organic".
+
+```{r data}
+
+varroa_data <- read.csv("Varroa_treatment_database_2023.10.27.csv",
+                        sep = ",",
+                        header = T)
+
+#we will add a breakdown of synthetic versus non synthetic
+chem_split <- as.vector(varroa_data$categoryTreatment)
+
+#We will loop around and replace the the term Chemical with its entry in the
+#SubCategory1Treatment variable
+for(i in 1:length(chem_split)){
+  
+  if(chem_split[i] == "Chemical")
+    {chem_split[i] <- varroa_data$SubCategory1Treatment[i]}
+}
+
+#Set it so Synthetic chemicals are the baseline.
+chem_split <- factor(chem_split, levels = c("Synthetic",
+                                            "Agriculturally_Organic",
+                                            "Biological",
+                                            "Physical",
+                                            "Mixed"))
+
+#Add this new chem_split variable to the data set.
+varroa_data <-  data.frame(varroa_data,
+                                    chem_split)
+
+
+```
+
+## log ratio calculations
+To calculate the log ratio vales we use a loop so that for every study we 
+calculate the pairwise log ratio between the studies control and each of the 
+treatment measures as log(treatment/control). 
+
+There are four different broad measurement types in the analysis. 
+(1) HoneyBeeIncrease: Those that measure aspects of honey bees where an increase 
+in the measure is a measure of the positive effects of the treatment. For 
+example, if the number of bees increases in response to some treatment. 
+
+(2) HoneyBeeReduction Those that measure aspects of honey bees where a increase 
+in the measure is a measure of the negative effects of the treatment. For 
+example, if the mortality rate of bees increases in response to some treatment.
+
+(3) VarroaReduction: Those that measure aspects of Varroa where an increase in 
+the measure is a measure of the positive effects of the treatment. For example, 
+if the Varroa mortality rate increases in response to some treatment.
+
+(4) VarroaIncrease: Those that measure aspects of Varroa where an increase in 
+the measure is a measure of the negative effects of the treatment. For example, 
+if the Varroa population size increases in response to some treatment.
+
+In order to include all 4 of these groups together in the main analysis we 
+reversed the sign for the log ratio of  HoneyBeeReduction and VarroaIncrease 
+values so that positive values indicate positive outcomes for bee control.
+
+We do not include any infinite ratios caused by either log(1/0) or
+log(0/1). We change log(0/0) values to zero as while it gives an NA a zero 
+value of no change is comparable to values such as log(1/1).
+
+First we will create a loop for each of the Response Variable Category types
+(HoneyBeeIncrease, HoneyBeeReduction, VarroaIncrease, VarroaReduction)
+
+# HoneyBeeIncrease
+
+Loop matching up all the treatments and controls for measures where an increase
+is a positive outcome for bees. This loop only compares treatment values within 
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). 
+
+3 measures are dropped as the control and treatments have differnt signs leading
+to log(-t/c) which cannot be computed.
+
+```{r loop HoneyBeeIncrease}
+
+#subset to just responses with HoneyBeeIncrease 
+HoneyBeeIncrease_data <- varroa_data[varroa_data$ResponseVariableCategory ==
+                                       "HoneyBeeIncrease",]
+
+#create a column that has unique treatment and response numbers 
+HoneyBeeIncrease_data$tre_resp <-  paste(HoneyBeeIncrease_data$Treatment_Group,
+                                         "_",
+                                         HoneyBeeIncrease_data$ResponseNo., 
+                                         sep = "")
+
+#empty list to put the final paired rows into
+HoneyBeeIncrease_tret_group_temp <- list()
+
+#Data for every study
+for (i in 1:length(unique(HoneyBeeIncrease_data$StudyID))){
+  
+  hbi_stud <- HoneyBeeIncrease_data[HoneyBeeIncrease_data$StudyID ==
+                                      unique(HoneyBeeIncrease_data$StudyID)[i],]
+  #Data for every response target (juvinal. adult etc)
+  for(z in 1:length(unique(hbi_stud$ResponseVariableTarget))){
+    
+    hbi_stud_res <- hbi_stud[hbi_stud$ResponseVariableTarget ==
+                               unique(hbi_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(hbi_stud_res$tre_resp))){
+
+       hbi_tret <- hbi_stud_res[hbi_stud_res$tre_resp == 
+                                  unique(hbi_stud_res$tre_resp)[w],]
+    
+       #This given the median value across the responses
+       median_res <- median(hbi_tret$specificResponseMean)
+
+#HoneyBeeIncrease_tret_group_temp <- vector()
+
+        for(t in 1:length(hbi_tret[hbi_tret$Status != "control",1])){
+
+#we default to the first control for now.
+hbi_control <- hbi_tret[hbi_tret$Status == "control", ][1,]
+
+#rename the colunm names to _control
+colnames(hbi_control) <- paste(names(hbi_control),"_control",sep = "")
+          
+#we default to the first control for now.
+HoneyBeeIncrease_tret_group_temp[[length(HoneyBeeIncrease_tret_group_temp)+1]]<- 
+  cbind(hbi_tret[hbi_tret$Status != "control",][t,],
+                   hbi_control, median_res)
+
+        }
+    }
+  }
+  }
+
+#Now we just 
+HoneyBeeIncrease_paired <- do.call(rbind.data.frame, 
+                                   HoneyBeeIncrease_tret_group_temp)
+
+#We can add a row of the log ratio of the response mean value 
+#(specificResponseMean) divided by the control (specificResponseMean_control)
+
+HoneyBeeIncrease_paired$logratio <- 
+  log(c(HoneyBeeIncrease_paired$specificResponseMean + 
+          HoneyBeeIncrease_paired$median_res*0.01)/
+        c(HoneyBeeIncrease_paired$specificResponseMean_control + 
+            HoneyBeeIncrease_paired$median_res*0.01))
+
+HoneyBeeIncrease_paired_fin <- HoneyBeeIncrease_paired
+
+HoneyBeeIncrease_paired_fin <- HoneyBeeIncrease_paired[!(is.nan(HoneyBeeIncrease_paired$logratio)),]
+
+#Lets just set Chemical as the baseline 
+HoneyBeeIncrease_paired_fin$categoryTreatment <- 
+  factor(HoneyBeeIncrease_paired_fin$categoryTreatment,
+                                                        levels = c("Chemical",
+                                                                   "Physical",
+                                                                   "Biological",
+                                                                   "Mixed")
+                                                        )
+
+#create a variable that gives a unique identify for nested country continent
+HoneyBeeIncrease_paired_fin$Cont_Country <- 
+  paste0(HoneyBeeIncrease_paired_fin$Continent,
+          HoneyBeeIncrease_paired_fin$Country)
+
+
+
+```    
+
+
+## HoneyBeeReduction 
+Loop matching up all the treatments and controls for measures where a decrease
+is a positive outcome for bees. This loop only compares treatment values within 
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). 
+
+After zero adjusting there are 3 NaN values which are caused by the control and
+treatment having differnt signs to thier values.
+
+```{r loop HoneyBeeReduction}
+
+#subset to just responses with HoneyBeeIncrease 
+HoneyBeeReduction_data <- varroa_data[varroa_data$ResponseVariableCategory ==
+                                       "HoneyBeeReduction",]
+
+#create a column that has unique treatment and response numbers 
+HoneyBeeReduction_data$tre_resp <-  paste(HoneyBeeReduction_data$Treatment_Group,
+                                         "_",
+                                         HoneyBeeReduction_data$ResponseNo., 
+                                         sep = "")
+
+#empty list to put the final paired rows into
+HoneyBeeReduction_tret_group_temp <- list()
+
+#Data for every study
+for (i in 1:length(unique(HoneyBeeReduction_data$StudyID))){
+  
+  hbr_stud <- HoneyBeeReduction_data[HoneyBeeReduction_data$StudyID ==
+                                      unique(HoneyBeeReduction_data$StudyID)[i],]
+  #Data for every response target (juvinal. adult etc)
+  for(z in 1:length(unique(hbr_stud$ResponseVariableTarget))){
+    
+    hbr_stud_res <- hbr_stud[hbr_stud$ResponseVariableTarget ==
+                               unique(hbr_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(hbr_stud_res$tre_resp))){
+
+hbr_tret <- hbr_stud_res[hbr_stud_res$tre_resp==unique(hbr_stud_res$tre_resp)[w],]
+
+#HoneyBeeIncrease_tret_group_temp <- vector()
+
+        for(t in 1:length(hbr_tret[hbr_tret$Status != "control",1])){
+
+       #This given the median value across the responses
+            median_hbr_tret_res <- median(hbr_tret$specificResponseMean) 
+            
+#we default to the first control for now.
+hbr_control <- hbr_tret[hbr_tret$Status == "control", ][1,]
+
+#rename the colunm names to _control
+colnames(hbr_control) <- paste(names(hbr_control),"_control",sep = "")
+          
+#we default to the first control for now.
+HoneyBeeReduction_tret_group_temp[[length(HoneyBeeReduction_tret_group_temp)+1]]<- 
+  cbind(hbr_tret[hbr_tret$Status != "control",][t,],
+                   hbr_control, median_hbr_tret_res)
+
+        }
+    }
+  }
+  }
+
+#Now we just 
+HoneyBeeReduction_paired <- do.call(rbind.data.frame, 
+                                    HoneyBeeReduction_tret_group_temp)
+
+#We can add a row of the log ratio of the response mean value 
+#(specificResponseMean) divided by the control (specificResponseMean_control)
+
+HoneyBeeReduction_paired$logratio <- 
+  log(c(HoneyBeeReduction_paired$specificResponseMean + 
+          HoneyBeeReduction_paired$median_hbr_tret_res*0.01)/
+        c(HoneyBeeReduction_paired$specificResponseMean_control + 
+            HoneyBeeReduction_paired$median_hbr_tret_res*0.01))
+
+##From looking at the data values for 154,155,156 should have 0 values
+#The loop does not work as the zero adjustment is also zero.
+HoneyBeeReduction_paired$logratio[154:156] <- c(0)
+
+#This give infinity due to the zero adjustment is also being zero
+#So here we will adjust by 1% of the response varible
+HoneyBeeReduction_paired$logratio[157] <- log(c(20+ 20*0.01)/c(20*0.01)) 
+
+#Remove the NaN values that are caused by differnt signes between control and
+#treatment
+HoneyBeeReduction_paired_fin <- HoneyBeeReduction_paired[!(is.nan(HoneyBeeReduction_paired$logratio)),]
+
+#Lets just set Chemical as the baseline 
+HoneyBeeReduction_paired_fin$categoryTreatment <- 
+  factor(HoneyBeeReduction_paired_fin$categoryTreatment,
+                                                        levels = c("Chemical",
+                                                                   "Physical",
+                                                                   "Biological",
+                                                                   "Mixed")
+                                                        )
+
+#create a variable that gives a unique identify for nested country continent
+HoneyBeeReduction_paired_fin$Cont_Country <- 
+  paste0(HoneyBeeReduction_paired_fin$Continent,
+         HoneyBeeReduction_paired_fin$Country)
+
+
+#We can also create a version of the data set
+#with the log ratio value flipped so that it can be read as a positive value
+
+HoneyBeeReduction_paired_red_fin <- HoneyBeeReduction_paired_fin
+
+HoneyBeeReduction_paired_red_fin$logratio <- 
+  -HoneyBeeReduction_paired_red_fin$logratio
+
+```
+
+## VarroaIncrease
+
+Loop matching up all the treatments and controls for measures where a decrease
+is a positive outcome for bees. This loop only compares treatment values within 
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc).
+
+No values where removed.
+
+
+```{r loop VarroaIncrease}
+
+#subset to just responses with VarroaIncrease 
+VarroaIncrease_data <- varroa_data[varroa_data$ResponseVariableCategory ==
+                                       "VarroaIncrease",]
+
+#create a column that has unique treatment and response numbers 
+VarroaIncrease_data$tre_resp <-  paste(VarroaIncrease_data$Treatment_Group,
+                                         "_",
+                                         VarroaIncrease_data$ResponseNo., 
+                                         sep = "")
+
+#empty list to put the final paired rows into
+VarroaIncrease_tret_group_temp <- list()
+
+#Data for every study
+for (i in 1:length(unique(VarroaIncrease_data$StudyID))){
+  
+  vi_stud <- VarroaIncrease_data[VarroaIncrease_data$StudyID ==
+                                      unique(VarroaIncrease_data$StudyID)[i],]
+  #Data for every response target (juvinal. adult etc)
+  for(z in 1:length(unique(vi_stud$ResponseVariableTarget))){
+    
+    vi_stud_res <- vi_stud[vi_stud$ResponseVariableTarget ==
+                               unique(vi_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(vi_stud_res$tre_resp))){
+
+vi_tret <- vi_stud_res[vi_stud_res$tre_resp == unique(vi_stud_res$tre_resp)[w],]
+
+       #This given the median value across the responses
+            median_vi_tret_res <- median(vi_tret$specificResponseMean) 
+
+        for(t in 1:length(vi_tret[vi_tret$Status != "control",1])){
+
+#we default to the first control for now.
+vi_control <- vi_tret[vi_tret$Status == "control", ][1,]
+
+#rename the colunm names to _control
+colnames(vi_control) <- paste(names(vi_control),"_control",sep = "")
+          
+#we default to the first control for now.
+VarroaIncrease_tret_group_temp[[length(VarroaIncrease_tret_group_temp) + 1]]  <- 
+  cbind(vi_tret[vi_tret$Status != "control",][t,],
+                   vi_control, median_vi_tret_res)
+
+        }
+    }
+  }
+  }
+
+#Now we just 
+VarroaIncrease_paired <- do.call(rbind.data.frame, 
+                                 VarroaIncrease_tret_group_temp)
+
+#We can add a row of the log ratio of the response mean value 
+#(specificResponseMean) divided by the control (specificResponseMean_control)
+
+VarroaIncrease_paired$logratio <- 
+  log(c(VarroaIncrease_paired$specificResponseMean + 
+          median_vi_tret_res*0.01)/
+        c(VarroaIncrease_paired$specificResponseMean_control + 
+            median_vi_tret_res*0.01))
+
+VarroaIncrease_paired_fin <- VarroaIncrease_paired
+  
+#lets recode the NaNs to 0 as they are caused by log(0/0)
+#which for our purposes are the same as log(1/1)
+#VarroaIncrease_paired[ is.nan(VarroaIncrease_paired$logratio), "logratio"] <- 0
+
+#lets remove any pairs that are infinite. 
+#These are caused by zeros log(1/0) or log(0/1)
+#VarroaIncrease_paired_fin <- 
+#  VarroaIncrease_paired[!(is.infinite(VarroaIncrease_paired$logratio)),]
+
+#Lets just set Chemical as the baseline 
+VarroaIncrease_paired_fin$categoryTreatment <- 
+  factor(VarroaIncrease_paired_fin$categoryTreatment,
+                                                        levels = c("Chemical",
+                                                                   "Physical",
+                                                                   "Biological",
+                                                                   "Mixed")
+                                                        )
+
+#create a variable that gives a unique identify for nested country continent
+VarroaIncrease_paired_fin$Cont_Country <- 
+  paste0(VarroaIncrease_paired_fin$Continent,
+         VarroaIncrease_paired_fin$Country)
+
+
+
+#We can also create a version of the dataset
+#with the log ratio value flipped so that it can be read as a positive value
+
+VarroaIncrease_paired_red_fin <- VarroaIncrease_paired_fin
+VarroaIncrease_paired_red_fin$logratio <- -VarroaIncrease_paired_red_fin$logratio
+
+
+```  
+
+
+
+## VarroaReduction
+
+Loop matching up all the treatments and controls for measures where an increase
+is a positive outcome for bees. This loop only compares treatment values within 
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). 
+
+1 NaN 
+values were removed due to change in sign between control and main value
+
+```{r loop VarroaReduction}
+
+#subset to just responses with VarroaReduction 
+VarroaReduction_data <- varroa_data[varroa_data$ResponseVariableCategory ==
+                                       "VarroaReduction",]
+
+#create a column that has unique treatment and response numbers 
+VarroaReduction_data$tre_resp <-  paste(VarroaReduction_data$Treatment_Group,
+                                         "_",
+                                         VarroaReduction_data$ResponseNo., 
+                                         sep = "")
+
+#empty list to put the final paired rows into
+VarroaReduction_tret_group_temp <- list()
+
+#Data for every study
+for (i in 1:length(unique(VarroaReduction_data$StudyID))){
+  
+  vr_stud <- VarroaReduction_data[VarroaReduction_data$StudyID ==
+                                      unique(VarroaReduction_data$StudyID)[i],]
+  #Data for every response target (juvinal. adult etc)
+  for(z in 1:length(unique(vr_stud$ResponseVariableTarget))){
+    
+    vr_stud_res <- vr_stud[vr_stud$ResponseVariableTarget ==
+                               unique(vr_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(vr_stud_res$tre_resp))){
+
+vr_tret <- vr_stud_res[vr_stud_res$tre_resp == unique(vr_stud_res$tre_resp)[w],]
+
+            median_vr_tret_res <- median(vr_tret$specificResponseMean) 
+
+
+#HoneyBeeIncrease_tret_group_temp <- vector()
+
+        for(t in 1:length(vr_tret[vr_tret$Status != "control",1])){
+
+#we default to the first control for now.
+vr_control <- vr_tret[vr_tret$Status == "control", ][1,]
+
+#rename the colunm names to _control
+colnames(vr_control) <- paste(names(vr_control),"_control",sep = "")
+          
+#we default to the first control for now.
+VarroaReduction_tret_group_temp[[length(VarroaReduction_tret_group_temp) + 1]]<- 
+  cbind(vr_tret[vr_tret$Status != "control",][t,],
+                   vr_control, median_vr_tret_res)
+
+        }
+    }
+  }
+  }
+
+#Now we just 
+VarroaReduction_paired <- do.call(rbind.data.frame, 
+                                  VarroaReduction_tret_group_temp)
+
+#We can add a row of the log ratio of the response mean value 
+#(specificResponseMean) divided by the control (specificResponseMean_control)
+
+VarroaReduction_paired$logratio <- 
+  log(c(VarroaReduction_paired$specificResponseMean +
+          VarroaReduction_paired$median_vr_tret_res*0.01)/
+        c(VarroaReduction_paired$specificResponseMean_control +
+          VarroaReduction_paired$median_vr_tret_res*0.01))
+
+#From looking at the data the values for 731,732,733,735,736,737,738
+#should be zero as all values are zero 
+VarroaReduction_paired$logratio[c(731,732,733,735,736,737,738)] <- c(0)
+
+VarroaReduction_paired$logratio[727] <- log(c(VarroaReduction_paired$specificResponseMean[727] +
+                                          VarroaReduction_paired$specificResponseMean[727]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[727]*0.01))
+
+VarroaReduction_paired$logratio[728] <- log(c(VarroaReduction_paired$specificResponseMean[728] +
+                                          VarroaReduction_paired$specificResponseMean[728]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[728]*0.01))
+  
+VarroaReduction_paired$logratio[729] <- log(c(VarroaReduction_paired$specificResponseMean[729] +
+                                          VarroaReduction_paired$specificResponseMean[729]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[729]*0.01))
+
+VarroaReduction_paired$logratio[730] <- log(c(VarroaReduction_paired$specificResponseMean[730] +
+                                          VarroaReduction_paired$specificResponseMean[730]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[730]*0.01))
+
+VarroaReduction_paired$logratio[734] <- log(c(VarroaReduction_paired$specificResponseMean[734] +
+                                          VarroaReduction_paired$specificResponseMean[734]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[734]*0.01))
+
+
+#lets recode the NaNs to 0 as they are caused by log(0/0)
+#which for our purposes are the same as log(1/1)
+VarroaReduction_paired_fin <- 
+  VarroaReduction_paired[!(is.nan(VarroaReduction_paired$logratio)),]
+
+#lets remove any pairs that are infinite. 
+#These are caused by zeros log(1/0) or log(0/1)
+VarroaReduction_paired_fin <- 
+  VarroaReduction_paired[!(is.infinite(VarroaReduction_paired$logratio)),]
+
+#Lets just set Chemical as the baseline 
+VarroaReduction_paired_fin$categoryTreatment <- 
+  factor(VarroaReduction_paired_fin$categoryTreatment,
+                                                        levels = c("Chemical",
+                                                                   "Physical",
+                                                                   "Biological",
+                                                                   "Mixed"
+                                                                   )
+                                                        )
+
+#create a variable that gives a unique identify for nested country continent
+VarroaReduction_paired_fin$Cont_Country <- 
+  paste0(VarroaReduction_paired_fin$Continent,
+         VarroaReduction_paired_fin$Country)
+
+```  
+
+
+
+We can join all the studies together with the sign reversed so that a positive
+difference indicates postie outcomes for control
+```{r combine all}
+
+#This just puts all the datasets together.
+#Notice HoneyBeeReduction_paired_red_fin and VarroaIncrease_paired_red_fin
+#have their signs reversed
+
+#We need to rename the median response column to match
+names(HoneyBeeReduction_paired_red_fin)[names(HoneyBeeReduction_paired_red_fin) == "median_hbr_tret_res"] <- "median_res"
+names(VarroaIncrease_paired_red_fin)[names(VarroaIncrease_paired_red_fin) == "median_vi_tret_res"] <- "median_res"
+names(VarroaReduction_paired_fin)[names(VarroaReduction_paired_fin) == "median_vr_tret_res"] <- "median_res"
+
+Full_comb_data <- rbind(HoneyBeeIncrease_paired_fin,
+                             HoneyBeeReduction_paired_red_fin,
+                             VarroaIncrease_paired_red_fin,
+                             VarroaReduction_paired_fin)
+
+#just bee data
+Full_bees_data <- rbind(HoneyBeeIncrease_paired_fin,
+                             HoneyBeeReduction_paired_red_fin)
+
+#Reset the levels for bees so workers are the baseline
+Full_bees_data$ResponseVariableTarget <- 
+  factor(Full_bees_data$ResponseVariableTarget,
+                                                levels = c("Honey_bee_worker",
+                                                           "Honey_bee_colony",
+                                                           "Honey_bee_juvenile",
+                                                           "Honey_bee_product",
+                                                           "Honey_bee_queen"))
+
+#just vorroa data
+Full_varroa_data <- rbind(VarroaIncrease_paired_red_fin,
+                             VarroaReduction_paired_fin)
+
+```
+
+
+# MCMCglmm analysis
+## Prior and parameters
+
+Now that we have a set of log ratios we can run some analysis. We first 
+set up a non-informative prior for our our models, with a flat gamma 
+distribution used as the non-informative prior for each for the random terms. 
+For more info on priors see the Course notes
+(http://cran.nexr.com/web/packages/MCMCglmm/vignettes/CourseNotes.pdf).
+
+
+```{r prior}
+
+prior_d <-list(R = list(V = 1, nu=0.002), 
+            G = list(G1=list(V = 1, nu=0.002, alpha.mu= 0, alpha.V= 10^3),
+                     G2=list(V = 1, nu=0.002, alpha.mu= 0, alpha.V= 10^3),
+                     G3=list(V = 1, nu=0.002, alpha.mu= 0, alpha.V= 10^3)
+                     ))
+
+
+```
+
+We will also set the number of iterations (nitt), the burnin (burnin) and the
+thining (thining).
+
+```{r mcmcglmm parameters}
+
+burnin <- c(10000)
+nitt <- c(110000)
+thining <- c(50)
+
+```
+
+
+## Main model
+
+The first model will include all studies with a positive values associated with
+a positive outcome for bee health.
+
+We run three chains (mod_full, mod_full2 and mod_full3) so we can test if they 
+converge. 
+
+100 studies of organic chemicals, 47 studies of synthetic chemicals, 18 studies 
+biological, 7 of physical and 3 of mixed.
+
+```{r mcmcglmm full}
+
+mod_full <- MCMCglmm(logratio ~ chem_split
+                                + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_comb_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = F
+                            )
+
+#second model acts as second chain for convergence
+#Add a 3rd later for final check
+mod_full2 <- MCMCglmm(logratio ~ chem_split
+                                  + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_comb_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = F
+                            )
+
+mod_full3 <- MCMCglmm(logratio ~ chem_split
+                                  + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_comb_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = F
+                            )
+
+summary(mod_full)
+
+```
+
+
+We can check for convergence using gelman.diag(). Values 
+
+```{r full conv, include=FALSE}
+
+#Check the fixed terms
+main_Sol_conv <- gelman.diag(mcmc.list(mod_full$Sol,mod_full2$Sol))
+main_Sol_conv
+
+#Check the random terms
+main_VCV_conv <- gelman.diag(mcmc.list(mod_full$VCV,mod_full2$VCV))
+main_VCV_conv
+
+```
+
+
+We can do a simple plot of our results. I need to fix this graph up some more.
+
+```{r main plot}
+
+plot(Full_comb_data$logratio ~ Full_comb_data$chem_split,
+     col ="white",
+     bty = "n",
+     boxwex = 0.05,
+     ylab = "log ratio",
+     xlab = "Treatment type",
+     pch = 16,
+     cex = 0)
+
+#We can plot the points over the graph to show the distribution better
+points(Full_comb_data$logratio ~ jitter(as.integer(Full_comb_data$chem_split),
+                                        amount = 0.1),
+       pch = 16,
+       col = rgb(44,137,160, max=255),
+       cex = 0.7)
+
+
+```
+
+
+Overall Synthetic chemicals have a significant overall positive outcome at a 
+ratio of 2.7/1 when compared to the treatment compared to control. This is
+significantly higher when compared to biological controls which only have a 
+positive outcome effect at a ratio of 1.5/1 when compared to the control.
+
+There is no significant difference between organic chemicals and synthetic 
+chemicals. (In the main model there was weak evidence that organic were not as
+effective)
+
+Both Physical and Mixed treatments are found to have reduced effects on outcomes
+when compared to synthetic chemicals, however neither are significantly different.
+
+Finally, there is significant support that treatments have higher positive 
+outcomes when tested in lab based setting with an increase of 2/1 effect 
+compared to non-lab settings.
+
+
+
+
+
+
+# Chemical sub analysis
+We can also just look at the chemical treatments as a sub group.
+
+100 studies of organic chemicals and 47 studies of synthetic chemicals
+
+```{r mcmcglmm chemical, include=FALSE}
+
+Full_chem <-  Full_comb_data[Full_comb_data$categoryTreatment == "Chemical",]
+
+#Rename any Agriculturally_Organic to Agriculturally_organic
+Full_chem[Full_chem$SubCategory1Treatment == "Agriculturally_Organic",]$SubCategory1Treatment <- "Agriculturally_organic"
+
+#Rename any Synthetic to synthetic
+Full_chem[Full_chem$SubCategory1Treatment == "Synthetic",]$SubCategory1Treatment <- "synthetic"
+
+mod_Full_chem <- MCMCglmm(logratio ~ SubCategory1Treatment,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_chem,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 verbose = FALSE
+                            )
+
+summary(mod_Full_chem)
+```
+
+Organic treatments are significantly better than the Null at a ratio of about
+2.3/1 when comparing the treatment to the control (exp(0.83240) gives you this).
+Synthetic have some evidence they are more effective compared to Organic but 
+only a very minor increase of a ratio of 1.17/1. 
+
+
+#Biological
+
+Lets look at the Biological sub category
+
+5 studies of bee breeds and 13 studies of natural enemies.
+
+```{r mcmcglmm Biological, include=FALSE}
+
+Full_bio <-  Full_comb_data[Full_comb_data$categoryTreatment == "Biological",]
+
+
+mod_Full_bio <- MCMCglmm(logratio ~ SubCategory1Treatment,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_bio,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 verbose = FALSE
+                            )
+
+summary(mod_Full_bio)
+
+
+```
+
+Here bee bread has a significant effect compared to the null of about 1.8/1 with 
+no significant difference of the effect of Natural enemies.
+
+# Breakdown on measurment type
+## Controls that increase bee pops
+
+54 studies for this analysis. 33 studies of organic chemical, 9 studies of 
+synthetic chemicals, 7 biological studies, 4 physical studies, 1 mixed study.
+```{r bee increase}
+
+
+
+mod_HoneyBeeIncrease <- MCMCglmm(logratio ~ chem_split,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = HoneyBeeIncrease_paired_fin,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_HoneyBeeIncrease)
+```
+
+Synthetic chemicals are not significantly different to controls regarding Honey 
+Bee health, however organic chemical have a significantly positive effect 
+compared to synthetic chemicals. Overall, this positive effect is very week with
+an effect ratio of 1.1/1 when compared to controls.
+
+Biological treatments have a positive effect on bee pops at a ratio of 1.5/1 
+with no other significant effects.
+
+
+# Controls that decrease bee pops
+This is with the original data so remember that a positive value here is something
+that decreases bee pops. There is 37 studies here. 6 biological studies, 25 with
+organic chemicals, 10 synthetic chemicals and 1 mixed study.
+```{r bee decrease}
+
+mod_HoneyBeeReduction <- MCMCglmm(logratio ~ chem_split,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = HoneyBeeReduction_paired_fin,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_HoneyBeeReduction)
+```
+
+Chemical studies are found to significantly decrease bee pops when compared 
+to the Null at a ratio of about 4.9/1 when comparing the treatment to the 
+control. While there is no significant difference with all other effects they 
+all have reduced effects on the reduction of bee populations. In effect, all 
+
+
+
+# Controls that include both increase and decrease of bee pops
+
+
+This is with both increases and decreases combined but with the decreases pop
+data sign flipped so now any positive value is good for the bees. The first 
+model is with the chemical category split into organic/synthetic. There are
+52 studies using organic chemicals, 18 studies using synthethic chemicals, 10
+biological studies, 2 mixed and 4 physical
+
+```{r bee all}
+
+All_bees_data <- rbind(HoneyBeeReduction_paired_red_fin, 
+                       HoneyBeeIncrease_paired_fin)
+
+mod_all_bees <- MCMCglmm(logratio ~ chem_split,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_bees_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_all_bees)
+
+```
+
+Synthetic chemical are found to significantly negatively affect bee pops 
+when compared to the Null (i.e. controls), at a ratio of 1.9/1. Synthetic 
+chemicals have a less negative effect, but still an effect of 1.45.
+
+While all other treatments are not significantly different the effect sizes 
+indicate that these effects on bee health are neutral. The non significance is 
+likely due to the lack of these types of studies.
+
+
+```{r bee all no split}
+
+All_bees_data <- rbind(HoneyBeeReduction_paired_red_fin, 
+                       HoneyBeeIncrease_paired_fin)
+
+mod_all_bees_no_split <- MCMCglmm(logratio ~ categoryTreatment,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_bees_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_all_bees_no_split)
+
+```
+
+Similar to the analysis where the chemicals are split into organic and synthetic.
+
+
+# Controls that measure decreases varroa pops
+
+ There is 101 studies here.
+```{r bee decrease}
+
+mod_VarroaReduction_paired_fin <- MCMCglmm(logratio ~ chem_split,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = VarroaReduction_paired_fin,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+
+                            )
+
+summary(mod_VarroaReduction_paired_fin)
+```
+
+
+Chemical studies are found to reduce Varroa at a ratio of about 7 to 1 when 
+comparing treatment to controls (exp(1.9798) which is the baseline). Organic 
+chemicals are not significantly different at reducing varroa compared to synthetic.
+
+Biological treatments are significantly less effective at reducing varroa, with
+a ratio of 3.4/1. There is no sigificant differnce for the other groups.
+
+
+# Controls that measure increases in varroa pops
+
+ There is 38 studies here.
+```{r Varroa increase}
+
+mod_VarroaIncrease_paired_fin <- MCMCglmm(logratio ~ categoryTreatment,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = VarroaIncrease_paired_fin,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_VarroaIncrease_paired_fin)
+```
+
+(Model with chemicals not split)
+Similar to the results above, but in reverse,chemical studies are found to have 
+a negative effect on Varroa at a ratio of about 3.7 to 1 when 
+comparing treatment to controls (exp(-1.3129) which is the baseline). These are 
+also significantly more effective than Biological controls at reducing Varroa, 
+which reduce at about 1.5/1.
+
+
+
+```{r Varroa increase chem split}
+
+mod_VarroaIncrease_paired_fin_split <- MCMCglmm(logratio ~ chem_split,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = VarroaIncrease_paired_fin,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_VarroaIncrease_paired_fin_split)
+```
+(Splitting the chemicals has no real change here, synthetic chemicals have a 
+significant negative effect and there is no difference between organic and 
+synthetic)
+
+
+
+# Controls that measure both increases/decrease in varroa pops
+
+```{r Varroa both}
+
+All_varroa_data <- rbind(VarroaReduction_paired_fin, 
+                       VarroaIncrease_paired_red_fin)
+
+All_varroa_data_mod <- MCMCglmm(logratio ~ categoryTreatment,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(All_varroa_data_mod)
+```
+
+Same as before chemicals are the best at a ratio of 6/1, biological significantly
+less effective at a ratio of 2.7/1 with physical 2.4/1 and haivng some support.
+
+```{r Varroa both split}
+
+All_varroa_data <- rbind(VarroaReduction_paired_fin, 
+                       VarroaIncrease_paired_red_fin)
+
+All_varroa_data_mod_split <- MCMCglmm(logratio ~ chem_split,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(All_varroa_data_mod_split)
+```
+
+
+Same as above, there is no difference between chemical types.
+
+
+
+# Models of life stage target
+
+We will look at life stage separately for bees and Varroa. 
+
+## Bees life stage
+First lets do it for bees, which have 71 studies
+
+Just look at interaction term between worker/juvenile versus treatment type.
+
+```{r not the bees}
+
+
+mod_bees_life <- MCMCglmm(logratio ~ categoryTreatment
+                                     + ResponseVariableTarget,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_bees_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_bees_life)
+```
+
+Overall, worked bees respond negatively to chemical treatment, with no significant
+difference regarding treatment type. Juvenile bees (1.1/1) have a significantly 
+larger positive repose to treatment compared to worker bees (effectively neutral)
+with some support for a similar differnce for colony and bee products. Overall, 
+it seems like worker bees have the worst response to treatments.
+
+## Varroa life stage
+
+
+```{r not the varroa}
+
+
+mod_varroa_life <- MCMCglmm(logratio ~ categoryTreatment
+                                     + ResponseVariableTarget,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_varroa_data,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_varroa_life)
+```
+
+No difference between life stages in varroa
+
+
+# Dosage dependance
+
+Taking from the Full_comb_data, which has the signs flipped so any positive
+number is a positive effect for bees (i.e. decreased bee mortality is now a 
+positive number).
+
+```{r dosage ordinal}
+
+Full_dosage <- data.frame(logratio = Full_comb_data$logratio,
+                          StudyID = Full_comb_data$StudyID,
+                          SubCa2Treat = Full_comb_data$SubCategory2Treatment,
+                          Dosage_level = Full_comb_data$Dosage_level,
+                          Continent = Full_comb_data$Continent,
+                          Country = Full_comb_data$Country,
+                          Cont_Country = Full_comb_data$Cont_Country)
+
+Full_dosage <- na.omit(Full_dosage)
+
+
+
+```
+
+
+Ordinal dosage analysis.
+
+```{r dosage ordinal model}
+
+
+mod_dos <- MCMCglmm(logratio ~ Dosage_level,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_dosage,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_dos)
+```
+
+There is no strong support for any doage dependence here. Note that there are 
+only 24 studies in this analysis so it cannot really be broken down more.
+
+
+# break down each of the chemicals
+
+```{r chemical breakdown}
+
+temp_Sub_chem <- Full_comb_data
+
+#combine Flumethrin and Fluvalinate and call them Pyrethroid
+temp_Sub_chem[temp_Sub_chem$broadTreatment %in% c("Flumethrin",
+                                                  "Fluvalinate"),
+              "broadTreatment"] <- "Pyrethroid"
+
+Sub_chem <- temp_Sub_chem[temp_Sub_chem$broadTreatment %in% 
+c("Amitraz", 
+  "Coumaphos", 
+  "Thymol", 
+  "Oxalic_acid",
+  "Formic_acid",
+  "Pyrethroid"), ]
+
+```
+
+
+Currently I just run a model with one as a contrast but we can change this.
+We need to have some expectation of what drives what.
+
+
+```{r chem specific model}
+
+
+mod_spec_chem <- MCMCglmm(logratio ~ broadTreatment,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_spec_chem)
+```
+
+Amitraz as the baseline has an effect of 4.4/1. Coumaphos is significantly less 
+effective compared to Amitraz with a ratio of 1.7/1 while there is some support 
+that Formic Acid is also less effective at a ratio of 3/1.
+
+
+# Chem specific effect on bee increases
+
+Model checking each chemical on bee pops
+
+```{r chemical breakdown HI}
+
+temp_Sub_chem_HI <- HoneyBeeIncrease_paired_fin
+                          
+
+#combine Flumethrin and Fluvalinate and call them Pyrethroid
+temp_Sub_chem_HI[temp_Sub_chem_HI$broadTreatment %in% c("Flumethrin","Fluvalinate"),
+                 "broadTreatment"] <- "Pyrethroid"
+
+Sub_chem_HI <- temp_Sub_chem_HI[temp_Sub_chem_HI$broadTreatment %in% 
+c("Amitraz", 
+  "Coumaphos", 
+  "Thymol", 
+  "Oxalic_acid",
+  "Formic_acid",
+  "Pyrethroid"), ]
+
+```
+
+
+```{r chem specific model HI}
+
+
+mod_spec_chem_HI <- MCMCglmm(logratio ~ broadTreatment,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_HI,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_spec_chem_HI)
+```
+
+As the baseline Amitraz is not significantly differnt when compared to the 
+control. Some evidence that Oxalic_acid is better with regards to bee pop 
+increases at a ratio of 1.4/1
+
+
+
+
+# Chem specific effect on bee decreases
+
+Model checking each chemical on bee decreases
+
+Only 15 studies here so not enough studies.
+
+```{r chemical breakdown HR}
+
+temp_Sub_chem_HR <- HoneyBeeReduction_paired_fin
+
+#combine Flumethrin and Fluvalinate and call them Pyrethroid
+temp_Sub_chem_HR[temp_Sub_chem_HR$broadTreatment %in% c("Flumethrin","Fluvalinate"),"broadTreatment"] <- "Pyrethroid"
+
+Sub_chem_HR <- temp_Sub_chem_HR[temp_Sub_chem_HR$broadTreatment %in% 
+c("Amitraz", 
+  "Coumaphos", 
+  "Thymol", 
+  "Oxalic_acid",
+  "Formic_acid",
+  "Pyrethroid"), ]
+
+```
+
+
+```{r chem specific model HR}
+
+
+mod_spec_chem_HR <- MCMCglmm(logratio ~ broadTreatment,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_HR,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_spec_chem_HR)
+```
+
+
+Nothing here but not enough data really.
+
+
+
+
+
+# Chem specific effect on Verrora increase
+
+Model checking each chemical on Varroa Increase
+only 24 studies.
+
+```{r chemical breakdown HR}
+
+temp_Sub_chem_VI <- VarroaIncrease_paired_red_fin
+
+#combine Flumethrin and Fluvalinate and call them Pyrethroid
+temp_Sub_chem_VI[temp_Sub_chem_VI$broadTreatment %in% c("Flumethrin","Fluvalinate"),"broadTreatment"] <- "Pyrethroid"
+
+Sub_chem_VI <- temp_Sub_chem_VI[temp_Sub_chem_VI$broadTreatment %in% 
+c("Amitraz", 
+  "Coumaphos", 
+  "Thymol", 
+  "Oxalic_acid",
+  "Formic_acid",
+  "Pyrethroid"), ]
+
+```
+
+
+```{r chem specific model HR}
+
+
+mod_spec_chem_VI <- MCMCglmm(logratio ~ broadTreatment,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_VI,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_spec_chem_VI)
+```
+
+As the baseline Amitraz is  significantly different when compared to the 
+control, with a ratio of 6.4/1. Coumaphos is significantly less effective, 
+performing worse than the control at a ratio of 1/3.9. Pyrethroid was also 
+significantly worse when compared to the Amitraz with a ratio of 3.2/1 when 
+compared to the control.
+
+
+
+
+# Chem specific effect on Verrora decreases
+
+Model checking each chemical on Varroa decreases 72 studies.
+
+```{r chemical breakdown HR}
+
+temp_Sub_chem_VR <- VarroaReduction_paired_fin
+
+#combine Flumethrin and Fluvalinate and call them Pyrethroid
+temp_Sub_chem_VR[temp_Sub_chem_VR$broadTreatment %in% c("Flumethrin","Fluvalinate"),"broadTreatment"] <- "Pyrethroid"
+
+Sub_chem_VR <- temp_Sub_chem_VR[temp_Sub_chem_VR$broadTreatment %in% 
+c("Amitraz", 
+  "Coumaphos", 
+  "Thymol", 
+  "Oxalic_acid",
+  "Formic_acid",
+  "Pyrethroid"), ]
+
+```
+
+
+```{r chem specific model VR}
+
+
+mod_spec_chem_VR <- MCMCglmm(logratio ~ broadTreatment,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_VR,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_spec_chem_VR)
+```
+
+As the baseline Amitraz is  significantly different when compared to the 
+control, with a ratio of 6.9/1. Some evidence that Coumaphos is less effective, 
+with a ratio of 4.5/1. Some evidence that Formic_acid is less effective, 
+with a ratio of 4.6/1 
+
+
+```{r chemical breakdown both vorroa}
+
+temp_Sub_chem_Vb <- rbind(VarroaReduction_paired_fin,
+                          VarroaIncrease_paired_red_fin)
+
+#combine Flumethrin and Fluvalinate and call them Pyrethroid
+temp_Sub_chem_Vb[temp_Sub_chem_Vb$broadTreatment %in% c("Flumethrin",
+                                                        "Fluvalinate"),
+                 "broadTreatment"] <- "Pyrethroid"
+
+Sub_chem_Vb <- temp_Sub_chem_Vb[temp_Sub_chem_Vb$broadTreatment %in% 
+c("Amitraz", 
+  "Coumaphos", 
+  "Thymol", 
+  "Oxalic_acid",
+  "Formic_acid",
+  "Pyrethroid"), ]
+
+```
+
+
+```{r chem specific model Vb}
+
+
+mod_spec_chem_Vb <- MCMCglmm(logratio ~ broadTreatment,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_Vb,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+summary(mod_spec_chem_Vb)
+```
+
+
+Overall, as the baseline Amitraz is  significantly different when compared to the 
+control, with a ratio of 7.9/1. Coumaphos is significantly less effective, 
+with a ratio of 2.55/1. Some weak evidence that Formic_acid and Pyrethroid are 
+also less effective, with ratios of 5.6/1 and 5.7/1 when compared to their 
+controls. 
+
+
+
+
+
