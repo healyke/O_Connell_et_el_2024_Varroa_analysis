@@ -1,45 +1,51 @@
 ---
-title: "Main_analysis_original"
+title: "Varroa sup1"
 author: "Kevin Healy"
-date: "2024-08-13"
+date: "2024-03-15"
 output:
   html_document: default
   pdf_document: default
 ---
 
-#Varroa Analysis
+## Varroa Supplementary Analysis
+
+This is a repeat of the main analysis but with an offset of 1% of the given 
+response values for a given treatment on a given response target for a given 
+study. This will allow for the inclusion of any ratios with zero's in either 
+the denominator or numerator.
 
 This document outlines the code used for the analysis in O Connell et al 2024 
 regarding the effects of various treatments on Varroa based on a literature 
-search (see main manuscript for details). The analysis measures the effect of 
-various treatments using the log ratio between the treatment and its associated 
-control. This approach allows us to compared values from various sources and 
-treatments from a wide general perspective.
+search (see main manuscript for details). The analysis measures the effect of
+various treatments using the log ratio between the treatment and its associated
+control. This approach allows us to compared values from various sources 
+and treatments from a wide general perspective. 
 
-##Load up Packages
+
+
+# Load up Packages
 
 We will use the MCMCglmm package which allows us to run mixed effects models in 
-a Bayesian framework.
+a Bayesian framework. 
 
-
-```{r load packages}
+```{r packages}
 
 library(MCMCglmm)
 library(hdrcde)
 
 ```
 
-##Data
-The raw data set Varroa_treatment_database_2023.10.27.csv can be found in the 
-supplementary of the manuscript. Once loaded we will also create a new variable 
-which further splits the category Chemical into “Synthetic” and 
-“Agriculturally_Organic”.
 
+# Data
 
+The raw data set Varroa_treatment_database_2024.12.18.csv can be found in the 
+supplementary of the manuscript. Once loaded we will also create a new 
+variable which further splits the category Chemical into "Synthetic" and 
+"Agriculturally_Organic".
 
 ```{r varroa_data}
 
-varroa_data <- read.csv("Varroa_treatment_database_2023.10.27.csv",
+varroa_data <- read.csv("Varroa_treatment_database_2024.12.18.csv",
                         sep = ",",
                         header = T)
 
@@ -47,16 +53,13 @@ varroa_data <- read.csv("Varroa_treatment_database_2023.10.27.csv",
 #we will add a breakdown of synthetic versus non synthetic
 chem_split <- as.vector(varroa_data$categoryTreatment)
 
-
-#We will loop around and replace the the term Chemical with its entry in the 
+#We will loop around and replace the the term Chemical with its entry in the
 #SubCategory1Treatment variable
 for(i in 1:length(chem_split)){
   
   if(chem_split[i] == "Chemical")
-  {chem_split[i] <- varroa_data$SubCategory1Treatment[i]}
-
-  }
-
+    {chem_split[i] <- varroa_data$SubCategory1Treatment[i]}
+}
 
 #Set it so Synthetic chemicals are the baseline.
 chem_split <- factor(chem_split, levels = c("Synthetic",
@@ -64,23 +67,23 @@ chem_split <- factor(chem_split, levels = c("Synthetic",
                                             "Biological",
                                             "Physical",
                                             "Mixed"))
+
 #Add this new chem_split variable to the data set.
 varroa_data <-  data.frame(varroa_data,
                                     chem_split)
-  
+
+
 ```
 
-
-#log ratio calculations
+## log ratio calculations
 To calculate the log ratio vales we use a loop so that for every study we 
 calculate the pairwise log ratio between the studies control and each of the 
-treatment measures as log(treatment/control).
+treatment measures as log(treatment/control). 
 
 There are four different broad measurement types in the analysis. 
-
 (1) HoneyBeeIncrease: Those that measure aspects of honey bees where an increase 
 in the measure is a measure of the positive effects of the treatment. For 
-example, if the number of bees increases in response to some treatment.
+example, if the number of bees increases in response to some treatment. 
 
 (2) HoneyBeeReduction Those that measure aspects of honey bees where a increase 
 in the measure is a measure of the negative effects of the treatment. For 
@@ -95,199 +98,208 @@ the measure is a measure of the negative effects of the treatment. For example,
 if the Varroa population size increases in response to some treatment.
 
 In order to include all 4 of these groups together in the main analysis we 
-reversed the sign for the log ratio of HoneyBeeReduction and VarroaIncrease 
+reversed the sign for the log ratio of  HoneyBeeReduction and VarroaIncrease 
 values so that positive values indicate positive outcomes for bee control.
 
-We do not include any infinite ratios caused by either log(1/0) or log(0/1). 
-We change log(0/0) values to zero as while it gives an NA a zero value of no 
-change is comparable to values such as log(1/1).
-First we will create a loop for each of the Response Variable Category types 
-(HoneyBeeIncrease, Honey- BeeReduction, VarroaIncrease, VarroaReduction)
+We do not include any infinite ratios caused by either log(1/0) or
+log(0/1). We change log(0/0) values to zero as while it gives an NA a zero 
+value of no change is comparable to values such as log(1/1).
 
+First we will create a loop for each of the Response Variable Category types
+(HoneyBeeIncrease, HoneyBeeReduction, VarroaIncrease, VarroaReduction)
 
-##HoneyBeeIncrease
-Loop matching up all the treatments and controls for measures where an increase 
+# HoneyBeeIncrease
+
+Loop matching up all the treatments and controls for measures where an increase
 is a positive outcome for bees. This loop only compares treatment values within 
-studies and for the same response target (for example, within studies there may 
-be several response targets such as adults, juveniles etc). 1 infinite value 
-was removed.
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). 3 measures are 
+dropped as the control and treatments have different signs leading
+to log(-t/c) which cannot be computed.
 
-```{r HoneyBeeIncrease}
+```{r loop HoneyBeeIncrease}
 
-#subset to just responses with HoneyBeeIncrease
+#subset to just responses with HoneyBeeIncrease 
 HoneyBeeIncrease_data <- varroa_data[varroa_data$ResponseVariableCategory ==
                                        "HoneyBeeIncrease",]
 
-
-#create a column that has unique treatment and response numbers
+#create a column that has unique treatment and response numbers 
 HoneyBeeIncrease_data$tre_resp <-  paste(HoneyBeeIncrease_data$Treatment_Group,
                                          "_",
-                                         HoneyBeeIncrease_data$ResponseNo.,
+                                         HoneyBeeIncrease_data$ResponseNo., 
                                          sep = "")
-
 
 #empty list to put the final paired rows into
 HoneyBeeIncrease_tret_group_temp <- list()
 
 #Data for every study
 for (i in 1:length(unique(HoneyBeeIncrease_data$StudyID))){
+  
   hbi_stud <- HoneyBeeIncrease_data[HoneyBeeIncrease_data$StudyID ==
                                       unique(HoneyBeeIncrease_data$StudyID)[i],]
-  
   #Data for every response target (juvinal. adult etc)
-  for(z in 1:length(unique(hbi_stud$ResponseVariableTarget))){ 
-    hbi_stud_res <- hbi_stud[hbi_stud$ResponseVariableTarget == 
-                               unique(hbi_stud$ResponseVariableTarget)[z],] 
+  for(z in 1:length(unique(hbi_stud$ResponseVariableTarget))){
     
-    for(w in 1:length(unique(hbi_stud_res$tre_resp))){
-        hbi_tret <- hbi_stud_res[hbi_stud_res$tre_resp ==
-                                   unique(hbi_stud_res$tre_resp)[w],]
-        
+    hbi_stud_res <- hbi_stud[hbi_stud$ResponseVariableTarget ==
+                               unique(hbi_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(hbi_stud_res$tre_resp))){
+
+       hbi_tret <- hbi_stud_res[hbi_stud_res$tre_resp == 
+                                  unique(hbi_stud_res$tre_resp)[w],]
+       
+       #This given the median value across the responses for this study
+       median_hbi_tret_res <- median(hbi_tret$specificResponseMean)
+
 #HoneyBeeIncrease_tret_group_temp <- vector()
-      for(t in 1:length(hbi_tret[hbi_tret$Status != "control",1])){ 
-        
+
+        for(t in 1:length(hbi_tret[hbi_tret$Status != "control",1])){
+
 #we default to the first control for now.
-hbi_control <- hbi_tret[hbi_tret$Status == "control", ][1,] 
-        
+hbi_control <- hbi_tret[hbi_tret$Status == "control", ][1,]
+
 #rename the colunm names to _control
 colnames(hbi_control) <- paste(names(hbi_control),"_control",sep = "")
-
+          
 #we default to the first control for now.
-HoneyBeeIncrease_tret_group_temp[[length(HoneyBeeIncrease_tret_group_temp)+1]]<-
+HoneyBeeIncrease_tret_group_temp[[length(HoneyBeeIncrease_tret_group_temp)+1]]<- 
   cbind(hbi_tret[hbi_tret$Status != "control",][t,],
-        hbi_control)
+                   hbi_control, median_hbi_tret_res)
 
-        } }
+        }
+    }
+  }
+  }
 
-  } }
-
-#Now we just
-HoneyBeeIncrease_paired <- do.call(rbind.data.frame,
+#Now we just 
+HoneyBeeIncrease_paired <- do.call(rbind.data.frame, 
                                    HoneyBeeIncrease_tret_group_temp)
 
-
-#We can add a row of the log ratio of the response mean value
+#We can add a row of the log ratio of the response mean value 
 #(specificResponseMean) divided by the control (specificResponseMean_control)
-HoneyBeeIncrease_paired$logratio <-
-  log(HoneyBeeIncrease_paired$specificResponseMean/
-        HoneyBeeIncrease_paired$specificResponseMean_control)
 
+HoneyBeeIncrease_paired$logratio <- 
+  log(c(HoneyBeeIncrease_paired$specificResponseMean + 
+          HoneyBeeIncrease_paired$median_hbi_tret_res*0.01)/
+        c(HoneyBeeIncrease_paired$specificResponseMean_control + 
+            HoneyBeeIncrease_paired$median_hbi_tret_res*0.01))
 
+HoneyBeeIncrease_paired_fin <- HoneyBeeIncrease_paired[!(is.nan(HoneyBeeIncrease_paired$logratio)),]
 
-#lets recode the NaNs to 0 as they are caused by log(0/0)
-#which for our purposes are the same as log(1/1) 
-HoneyBeeIncrease_paired[ is.nan(HoneyBeeIncrease_paired$logratio),
-                         "logratio"] <- 0
-
-#lets remove any pairs that are infinite. 
-#These are caused by zeros log(1/0) or log(0/1) 
-HoneyBeeIncrease_paired_fin <-
-  HoneyBeeIncrease_paired[!(is.infinite(HoneyBeeIncrease_paired$logratio)),]
-
-#Lets just set Chemical as the baseline
+#Lets just set Chemical as the baseline 
 HoneyBeeIncrease_paired_fin$categoryTreatment <- 
   factor(HoneyBeeIncrease_paired_fin$categoryTreatment,
                                                         levels = c("Chemical",
                                                                    "Physical",
                                                                    "Biological",
                                                                    "Mixed")
-        )
+                                                        )
 
 #create a variable that gives a unique identify for nested country continent
-HoneyBeeIncrease_paired_fin$Cont_Country <-
+HoneyBeeIncrease_paired_fin$Cont_Country <- 
   paste0(HoneyBeeIncrease_paired_fin$Continent,
           HoneyBeeIncrease_paired_fin$Country)
 
-```
 
 
+```    
 
-##HoneyBeeReduction
-Loop matching up all the treatments and controls for measures where a decrease 
+
+## HoneyBeeReduction 
+Loop matching up all the treatments and controls for measures where a decrease
 is a positive outcome for bees. This loop only compares treatment values within 
-studies and for the same response target (for example, within studies there may 
-be several response targets such as adults, juveniles etc). 59 infinite values 
-were removed.
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). After zero 
+adjusting there are 3 NaN values which are caused by the control and treatment 
+having different signs to their values.(59 values where originally dropped)
 
+```{r loop HoneyBeeReduction}
 
-```{r HoneyBeeReduction}
-
-#subset to just responses with HoneyBeeIncrease
+#subset to just responses with HoneyBeeIncrease 
 HoneyBeeReduction_data <- varroa_data[varroa_data$ResponseVariableCategory ==
                                        "HoneyBeeReduction",]
-#create a column that has unique treatment and response numbers
+
+#create a column that has unique treatment and response numbers 
 HoneyBeeReduction_data$tre_resp <-  paste(HoneyBeeReduction_data$Treatment_Group,
                                          "_",
-                                         HoneyBeeReduction_data$ResponseNo.,
+                                         HoneyBeeReduction_data$ResponseNo., 
                                          sep = "")
 
 #empty list to put the final paired rows into
 HoneyBeeReduction_tret_group_temp <- list()
 
 #Data for every study
-  for (i in 1:length(unique(HoneyBeeReduction_data$StudyID))){
-      hbr_stud <- HoneyBeeReduction_data[HoneyBeeReduction_data$StudyID ==
-                                      unique(HoneyBeeReduction_data$StudyID)[i],]
-      
-      
-#Data for every response target (juvinal. adult etc)
-      for(z in 1:length(unique(hbr_stud$ResponseVariableTarget))){
-      
-      hbr_stud_res <- hbr_stud[hbr_stud$ResponseVariableTarget ==
-                                 unique(hbr_stud$ResponseVariableTarget)[z],]
-      
-        for(w in 1:length(unique(hbr_stud_res$tre_resp))){
-        
-  hbr_tret <- hbr_stud_res[hbr_stud_res$tre_resp==unique(hbr_stud_res$tre_resp)[w],]
+for (i in 1:length(unique(HoneyBeeReduction_data$StudyID))){
   
-          for(t in 1:length(hbr_tret[hbr_tret$Status != "control",1])){
-            
+  hbr_stud <- HoneyBeeReduction_data[HoneyBeeReduction_data$StudyID ==
+                                      unique(HoneyBeeReduction_data$StudyID)[i],]
+  #Data for every response target (juvinal. adult etc)
+  for(z in 1:length(unique(hbr_stud$ResponseVariableTarget))){
+    
+    hbr_stud_res <- hbr_stud[hbr_stud$ResponseVariableTarget ==
+                               unique(hbr_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(hbr_stud_res$tre_resp))){
+
+hbr_tret <- hbr_stud_res[hbr_stud_res$tre_resp==unique(hbr_stud_res$tre_resp)[w],]
+
+       #This given the median value across the responses
+            median_hbr_tret_res <- median(hbr_tret$specificResponseMean) 
+
+        for(t in 1:length(hbr_tret[hbr_tret$Status != "control",1])){
+
+          
 #we default to the first control for now.
 hbr_control <- hbr_tret[hbr_tret$Status == "control", ][1,]
 
 #rename the colunm names to _control
 colnames(hbr_control) <- paste(names(hbr_control),"_control",sep = "")
-      
-
+          
 #we default to the first control for now.
-HoneyBeeReduction_tret_group_temp[[length(HoneyBeeReduction_tret_group_temp)+1]]<-
+HoneyBeeReduction_tret_group_temp[[length(HoneyBeeReduction_tret_group_temp)+1]]<- 
   cbind(hbr_tret[hbr_tret$Status != "control",][t,],
-        hbr_control)
-} }
-} }      
-      
+                   hbr_control, median_hbr_tret_res)
 
-#Now we just
-HoneyBeeReduction_paired <- do.call(rbind.data.frame,
+        }
+    }
+  }
+  }
+
+#Now we just 
+HoneyBeeReduction_paired <- do.call(rbind.data.frame, 
                                     HoneyBeeReduction_tret_group_temp)
-#We can add a row of the log ratio of the response mean value
+
+#We can add a row of the log ratio of the response mean value 
 #(specificResponseMean) divided by the control (specificResponseMean_control)
-HoneyBeeReduction_paired$logratio <-
-  log(HoneyBeeReduction_paired$specificResponseMean/
-        HoneyBeeReduction_paired$specificResponseMean_control)   
-      
 
-#lets recode the NaNs to 0 as they are caused by log(0/0)
-#which for our purposes are the same as log(1/1) 
-HoneyBeeReduction_paired[ is.nan(HoneyBeeReduction_paired$logratio),
-                          "logratio"] <- 0
+HoneyBeeReduction_paired$logratio <- 
+  log(c(HoneyBeeReduction_paired$specificResponseMean + 
+          HoneyBeeReduction_paired$median_hbr_tret_res*0.01)/
+        c(HoneyBeeReduction_paired$specificResponseMean_control + 
+            HoneyBeeReduction_paired$median_hbr_tret_res*0.01))
+
+##From looking at the data values for 154,155,156 should have 0 values
+#The loop does not work as the zero adjustment is also zero.
+HoneyBeeReduction_paired$logratio[154:156] <- c(0)
+
+#This give infinity due to the zero adjustment is also being zero
+#So here we will adjust by 1% of the response varible
+HoneyBeeReduction_paired$logratio[157] <- log(c(20+ 20*0.01)/c(20*0.01)) 
 
 
-#lets remove any pairs that are infinite. #These are caused by zeros log(1/0) or log(0/1) 
-HoneyBeeReduction_paired_fin <-
-  HoneyBeeReduction_paired[!(is.infinite(HoneyBeeReduction_paired$logratio)),]
+HoneyBeeReduction_paired_fin <- HoneyBeeReduction_paired[!(is.nan(HoneyBeeReduction_paired$logratio)),]
 
-#Lets just set Chemical as the baseline
-HoneyBeeReduction_paired_fin$categoryTreatment <-
+#Lets just set Chemical as the baseline 
+HoneyBeeReduction_paired_fin$categoryTreatment <- 
   factor(HoneyBeeReduction_paired_fin$categoryTreatment,
                                                         levels = c("Chemical",
                                                                    "Physical",
                                                                    "Biological",
                                                                    "Mixed")
-  )
+                                                        )
 
 #create a variable that gives a unique identify for nested country continent
-HoneyBeeReduction_paired_fin$Cont_Country <-
+HoneyBeeReduction_paired_fin$Cont_Country <- 
   paste0(HoneyBeeReduction_paired_fin$Continent,
          HoneyBeeReduction_paired_fin$Country)
 
@@ -297,103 +309,97 @@ HoneyBeeReduction_paired_fin$Cont_Country <-
 
 HoneyBeeReduction_paired_red_fin <- HoneyBeeReduction_paired_fin
 
-HoneyBeeReduction_paired_red_fin$logratio <-
+HoneyBeeReduction_paired_red_fin$logratio <- 
   -HoneyBeeReduction_paired_red_fin$logratio
-         
 
 ```
 
+## VarroaIncrease
 
-
-VarroaIncrease
-Loop matching up all the treatments and controls for measures where a decrease 
+Loop matching up all the treatments and controls for measures where a decrease
 is a positive outcome for bees. This loop only compares treatment values within 
-studies and for the same response target (for example, within studies there may 
-be several response targets such as adults, juveniles etc). 29 infinite values 
-were removed.
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). No values where 
+removed (originally 29 infinite values were removed)
 
-```{r VarroaIncrease}
 
-#subset to just responses with VarroaIncrease
+```{r loop VarroaIncrease}
+
+#subset to just responses with VarroaIncrease 
 VarroaIncrease_data <- varroa_data[varroa_data$ResponseVariableCategory ==
                                        "VarroaIncrease",]
 
-
-#create a column that has unique treatment and response numbers
+#create a column that has unique treatment and response numbers 
 VarroaIncrease_data$tre_resp <-  paste(VarroaIncrease_data$Treatment_Group,
                                          "_",
-                                         VarroaIncrease_data$ResponseNo.,
+                                         VarroaIncrease_data$ResponseNo., 
                                          sep = "")
-
 
 #empty list to put the final paired rows into
 VarroaIncrease_tret_group_temp <- list()
 
-
 #Data for every study
 for (i in 1:length(unique(VarroaIncrease_data$StudyID))){
+  
   vi_stud <- VarroaIncrease_data[VarroaIncrease_data$StudyID ==
                                       unique(VarroaIncrease_data$StudyID)[i],]
   #Data for every response target (juvinal. adult etc)
-  for(z in 1:length(unique(vi_stud$ResponseVariableTarget))){ 
-    vi_stud_res <- vi_stud[vi_stud$ResponseVariableTarget ==
-unique(vi_stud$ResponseVariableTarget)[z],] 
+  for(z in 1:length(unique(vi_stud$ResponseVariableTarget))){
     
-    for(w in 1:length(unique(vi_stud_res$tre_resp))){
-vi_tret <- vi_stud_res[vi_stud_res$tre_resp == unique(vi_stud_res$tre_resp)[w],] 
+    vi_stud_res <- vi_stud[vi_stud$ResponseVariableTarget ==
+                               unique(vi_stud$ResponseVariableTarget)[z],]
+    
+     for(w in 1:length(unique(vi_stud_res$tre_resp))){
+
+vi_tret <- vi_stud_res[vi_stud_res$tre_resp == unique(vi_stud_res$tre_resp)[w],]
+
         
-      for(t in 1:length(vi_tret[vi_tret$Status != "control",1])){
+        median_vi_tret_res <- median(vi_tret$specificResponseMean) 
         
+
+        for(t in 1:length(vi_tret[vi_tret$Status != "control",1])){
+
 #we default to the first control for now.
-vi_control <- vi_tret[vi_tret$Status == "control", ][1,] 
+vi_control <- vi_tret[vi_tret$Status == "control", ][1,]
 
 #rename the colunm names to _control
 colnames(vi_control) <- paste(names(vi_control),"_control",sep = "")
-
+          
 #we default to the first control for now.
-VarroaIncrease_tret_group_temp[[length(VarroaIncrease_tret_group_temp) + 1]]  <-
+VarroaIncrease_tret_group_temp[[length(VarroaIncrease_tret_group_temp) + 1]]  <- 
   cbind(vi_tret[vi_tret$Status != "control",][t,],
-        vi_control)  
+                   vi_control, median_vi_tret_res)
 
-      } }
-  } }
+        }
+    }
+  }
+  }
 
-
-#Now we just
-
+#Now we just 
 VarroaIncrease_paired <- do.call(rbind.data.frame, VarroaIncrease_tret_group_temp)
 
-#We can add a row of the log ratio of the response mean value
+#We can add a row of the log ratio of the response mean value 
 #(specificResponseMean) divided by the control (specificResponseMean_control)
 
-
-VarroaIncrease_paired$logratio <-
-  log(VarroaIncrease_paired$specificResponseMean/
-        VarroaIncrease_paired$specificResponseMean_control)
-
-
-#lets recode the NaNs to 0 as they are caused by log(0/0)
-#which for our purposes are the same as log(1/1)
-VarroaIncrease_paired[ is.nan(VarroaIncrease_paired$logratio), "logratio"] <- 0
+VarroaIncrease_paired$logratio <- 
+  log(c(VarroaIncrease_paired$specificResponseMean + 
+          median_vi_tret_res*0.01)/
+        c(VarroaIncrease_paired$specificResponseMean_control + 
+            median_vi_tret_res*0.01))
+VarroaIncrease_paired_fin <- VarroaIncrease_paired
 
 
-#lets remove any pairs that are infinite. 
-#These are caused by zeros log(1/0) or log(0/1) 
-VarroaIncrease_paired_fin <-
-  VarroaIncrease_paired[!(is.infinite(VarroaIncrease_paired$logratio)),]
-
-
-#Lets just set Chemical as the baseline
-VarroaIncrease_paired_fin$categoryTreatment <-
-  factor(VarroaIncrease_paired_fin$categoryTreatment,levels = c("Chemical",
-                                                                "Physical",
-                                                                "Biological",
-                                                                "Mixed")
-  )
-
+#Lets just set Chemical as the baseline 
+VarroaIncrease_paired_fin$categoryTreatment <- 
+  factor(VarroaIncrease_paired_fin$categoryTreatment,
+                                                        levels = c("Chemical",
+                                                                   "Physical",
+                                                                   "Biological",
+                                                                   "Mixed")
+                                                        )
 
 #create a variable that gives a unique identify for nested country continent
-VarroaIncrease_paired_fin$Cont_Country <-
+VarroaIncrease_paired_fin$Cont_Country <- 
   paste0(VarroaIncrease_paired_fin$Continent,
          VarroaIncrease_paired_fin$Country)
 
@@ -401,30 +407,34 @@ VarroaIncrease_paired_fin$Cont_Country <-
 
 #We can also create a version of the dataset
 #with the log ratio value flipped so that it can be read as a positive value
+
 VarroaIncrease_paired_red_fin <- VarroaIncrease_paired_fin
 VarroaIncrease_paired_red_fin$logratio <- -VarroaIncrease_paired_red_fin$logratio
 
 
-```
+```  
 
 
-#VarroaReduction
-Loop matching up all the treatments and controls for measures where an increase 
+
+## VarroaReduction
+
+Loop matching up all the treatments and controls for measures where an increase
 is a positive outcome for bees. This loop only compares treatment values within 
-studies and for the same response target (for example, within studies there may 
-be several response targets such as adults, juveniles etc). 300 infinite values 
-were removed.
+studies and for the same response target (for example, within studies there
+may be several response targets such as adults, juveniles etc). 1 NaN value was 
+removed due to change in sign between control and main value. Originally 300 
+infinite values were removed.
 
-```{r VarroaReduction}
+```{r loop VarroaReduction}
 
-#subset to just responses with VarroaReduction
-VarroaReduction_data <- varroa_data[varroa_data$ResponseVariableCategory == 
-                                      "VarroaReduction",]
+#subset to just responses with VarroaReduction 
+VarroaReduction_data <- varroa_data[varroa_data$ResponseVariableCategory ==
+                                       "VarroaReduction",]
 
-#create a column that has unique treatment and response numbers
+#create a column that has unique treatment and response numbers 
 VarroaReduction_data$tre_resp <-  paste(VarroaReduction_data$Treatment_Group,
                                          "_",
-                                         VarroaReduction_data$ResponseNo.,
+                                         VarroaReduction_data$ResponseNo., 
                                          sep = "")
 
 #empty list to put the final paired rows into
@@ -432,74 +442,109 @@ VarroaReduction_tret_group_temp <- list()
 
 #Data for every study
 for (i in 1:length(unique(VarroaReduction_data$StudyID))){
+  
   vr_stud <- VarroaReduction_data[VarroaReduction_data$StudyID ==
                                       unique(VarroaReduction_data$StudyID)[i],]
-  
   #Data for every response target (juvinal. adult etc)
   for(z in 1:length(unique(vr_stud$ResponseVariableTarget))){
+    
     vr_stud_res <- vr_stud[vr_stud$ResponseVariableTarget ==
                                unique(vr_stud$ResponseVariableTarget)[z],]
     
-    for(w in 1:length(unique(vr_stud_res$tre_resp))){
+     for(w in 1:length(unique(vr_stud_res$tre_resp))){
 
 vr_tret <- vr_stud_res[vr_stud_res$tre_resp == unique(vr_stud_res$tre_resp)[w],]
 
+
+            median_vr_tret_res <- median(vr_tret$specificResponseMean) 
+
 #HoneyBeeIncrease_tret_group_temp <- vector()
-      for(t in 1:length(vr_tret[vr_tret$Status != "control",1])){
-        
+
+        for(t in 1:length(vr_tret[vr_tret$Status != "control",1])){
+
 #we default to the first control for now.
-vr_control <- vr_tret[vr_tret$Status == "control", ][1,] 
+vr_control <- vr_tret[vr_tret$Status == "control", ][1,]
 
 #rename the colunm names to _control
 colnames(vr_control) <- paste(names(vr_control),"_control",sep = "")
-
+          
 #we default to the first control for now.
-VarroaReduction_tret_group_temp[[length(VarroaReduction_tret_group_temp) + 1]]<-
+VarroaReduction_tret_group_temp[[length(VarroaReduction_tret_group_temp) + 1]]<- 
   cbind(vr_tret[vr_tret$Status != "control",][t,],
-        vr_control)
+                   vr_control, median_vr_tret_res)
 
-      } }
-  } }
+        }
+    }
+  }
+  }
 
-#Now we just
-VarroaReduction_paired <- do.call(rbind.data.frame,
+#Now we just 
+VarroaReduction_paired <- do.call(rbind.data.frame, 
                                   VarroaReduction_tret_group_temp)
-#We can add a row of the log ratio of the response mean value
+
+#We can add a row of the log ratio of the response mean value 
 #(specificResponseMean) divided by the control (specificResponseMean_control)
-VarroaReduction_paired$logratio <-
-  log(c(VarroaReduction_paired$specificResponseMean)/
-        c(VarroaReduction_paired$specificResponseMean_control))
+
+VarroaReduction_paired$logratio <- 
+  log(c(VarroaReduction_paired$specificResponseMean +
+          VarroaReduction_paired$median_vr_tret_res*0.01)/
+        c(VarroaReduction_paired$specificResponseMean_control +
+          VarroaReduction_paired$median_vr_tret_res*0.01))
+
+#From looking at the data the values for 731,732,733,735,736,737,738
+#should be zero as all values are zero 
+VarroaReduction_paired$logratio[c(731,732,733,735,736,737,738)] <- c(0)
+
+VarroaReduction_paired$logratio[727] <- log(c(VarroaReduction_paired$specificResponseMean[727] +
+                                          VarroaReduction_paired$specificResponseMean[727]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[727]*0.01))
+
+VarroaReduction_paired$logratio[728] <- log(c(VarroaReduction_paired$specificResponseMean[728] +
+                                          VarroaReduction_paired$specificResponseMean[728]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[728]*0.01))
+  
+VarroaReduction_paired$logratio[729] <- log(c(VarroaReduction_paired$specificResponseMean[729] +
+                                          VarroaReduction_paired$specificResponseMean[729]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[729]*0.01))
+
+VarroaReduction_paired$logratio[730] <- log(c(VarroaReduction_paired$specificResponseMean[730] +
+                                          VarroaReduction_paired$specificResponseMean[730]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[730]*0.01))
+
+VarroaReduction_paired$logratio[734] <- log(c(VarroaReduction_paired$specificResponseMean[734] +
+                                          VarroaReduction_paired$specificResponseMean[734]*0.01)/
+                                       c(VarroaReduction_paired$specificResponseMean[734]*0.01))
 
 
-#lets recode the NaNs to 0 as they are caused by log(0/0)
-#which for our purposes are the same as log(1/1)
-VarroaReduction_paired[ is.nan(VarroaReduction_paired$logratio), "logratio"]<- 0
+VarroaReduction_paired_fin <- 
+  VarroaReduction_paired[!(is.nan(VarroaReduction_paired$logratio)),]
 
 #lets remove any pairs that are infinite. 
-#These are caused by zeros log(1/0) or log(0/1) 
-VarroaReduction_paired_fin <-
+VarroaReduction_paired_fin <- 
   VarroaReduction_paired[!(is.infinite(VarroaReduction_paired$logratio)),]
 
 
-#Lets just set Chemical as the baseline
-VarroaReduction_paired_fin$categoryTreatment <-
+#Lets just set Chemical as the baseline 
+VarroaReduction_paired_fin$categoryTreatment <- 
   factor(VarroaReduction_paired_fin$categoryTreatment,
-         levels = c("Chemical",
-                    "Physical",
-                    "Biological",
-                    "Mixed"
-                    )
-         )
+                                                        levels = c("Chemical",
+                                                                   "Physical",
+                                                                   "Biological",
+                                                                   "Mixed"
+                                                                   )
+                                                        )
 
 #create a variable that gives a unique identify for nested country continent
-VarroaReduction_paired_fin$Cont_Country <-
+VarroaReduction_paired_fin$Cont_Country <- 
   paste0(VarroaReduction_paired_fin$Continent,
-         VarroaReduction_paired_fin$Country)      
+         VarroaReduction_paired_fin$Country)
 
-```
+```  
 
-We can join all the studies together with the sign reversed so that a positive 
-difference indicates postie outcomes for control.
+
+
+We can join all the studies together with the sign reversed so that a positive
+difference indicates postie outcomes for control
 
 We can combine the bee breeds into categories of C lineage (lugistica, carnica, 
 lugistica/carnica hybrid, siciliana), A  lineage (intermissa) O lineage (caucasia, 
@@ -584,32 +629,31 @@ Full_varroa_data <- rbind(VarroaIncrease_paired_red_fin,
 
 
 
+# MCMCglmm analysis
+## Prior and parameters
 
-
-
-##MCMCglmm analysis 
-#Prior and parameters
-Now that we have a set of log ratios we can run some analysis. We first set up 
-a non-informative prior for our our models, with a flat gamma distribution used 
-as the non-informative prior for each for the random terms. For more info on 
-priors see the Course notes (http://cran.nexr.com/web/packages/MCMCglmm/ 
-vignettes/CourseNotes.pdf).
+Now that we have a set of log ratios we can run some analysis. We first 
+set up a non-informative prior for our our models, with a flat gamma 
+distribution used as the non-informative prior for each for the random terms. 
+For more info on priors see the Course notes
+(http://cran.nexr.com/web/packages/MCMCglmm/vignettes/CourseNotes.pdf).
 
 
 ```{r prior}
-prior_d <-list(R = list(V = 1, nu=0.002),
+
+prior_d <-list(R = list(V = 1, nu=0.002), 
             G = list(G1=list(V = 1, nu=0.002, alpha.mu= 0, alpha.V= 10^3),
                      G2=list(V = 1, nu=0.002, alpha.mu= 0, alpha.V= 10^3),
                      G3=list(V = 1, nu=0.002, alpha.mu= 0, alpha.V= 10^3)
-))
+                     ))
+
 
 ```
 
+We will also set the number of iterations (nitt), the burnin (burnin) and the
+thining (thining).
 
-We will also set the number of iterations (nitt), the burnin (burnin) and 
-the thining (thining).
-
-```{r paramaters}
+```{r mcmcglmm parameters}
 
 burnin <- c(10000)
 nitt <- c(110000)
@@ -617,17 +661,22 @@ thining <- c(50)
 
 ```
 
-#Main model
-The first model will include all studies with a positive values associated with 
-a positive outcome for bee health. We run three chains (mod_full, mod_full2 and 
-mod_full3) so we can test if they converge.
 
-```{r main model}
+## Main model
+
+The first model will include all studies with a positive values associated with
+a positive outcome for bee health.
+
+We run three chains (mod_full, mod_full2 and mod_full3) so we can test if they 
+converge. 
+
+```{r mcmcglmm full}
+
 mod_full <- MCMCglmm(logratio ~ chem_split
                                 + Context,
                                  rcov=~units,
-                                 random =~StudyID_control
-                                          + Continent
+                                 random =~StudyID_control 
+                                          + Continent 
                                           + Cont_Country,
                                  family ="gaussian",
                                  data = Full_comb_data,
@@ -635,14 +684,15 @@ mod_full <- MCMCglmm(logratio ~ chem_split
                                  thin = thining,
                                  burnin = burnin,
                                  prior = prior_d,
-                                 verbose = F )
+                                 verbose = F
+                            )
 
 #second model acts as second chain for convergence
 mod_full2 <- MCMCglmm(logratio ~ chem_split
                                   + Context,
                                  rcov=~units,
-                                 random =~StudyID_control
-                                          + Continent
+                                 random =~StudyID_control 
+                                          + Continent 
                                           + Cont_Country,
                                  family ="gaussian",
                                  data = Full_comb_data,
@@ -650,14 +700,14 @@ mod_full2 <- MCMCglmm(logratio ~ chem_split
                                  thin = thining,
                                  burnin = burnin,
                                  prior = prior_d,
-                                 verbose = F )
+                                 verbose = F
+                            )
 
-#second model acts as second chain for convergence #Add a 3rd later for final check
 mod_full3 <- MCMCglmm(logratio ~ chem_split
                                   + Context,
                                  rcov=~units,
-                                 random =~StudyID_control
-                                          + Continent
+                                 random =~StudyID_control 
+                                          + Continent 
                                           + Cont_Country,
                                  family ="gaussian",
                                  data = Full_comb_data,
@@ -665,49 +715,30 @@ mod_full3 <- MCMCglmm(logratio ~ chem_split
                                  thin = thining,
                                  burnin = burnin,
                                  prior = prior_d,
-                                 verbose = F )
+                                 verbose = F
+                            )
 
 summary(mod_full)
+
 ```
 
 
-We can check for convergence using gelman.diag().
+We can check for convergence using gelman.diag(). Values 
 
-```{r full convergance, include=FALSE}
+```{r full conv, include=T}
 
 #Check the fixed terms
-main_Sol_conv <- gelman.diag(mcmc.list(mod_full$Sol,
-                                       mod_full2$Sol,
-                                       mod_full3$Sol))
+main_Sol_conv <- gelman.diag(mcmc.list(mod_full$Sol,mod_full2$Sol))
 main_Sol_conv
 
 #Check the random terms
-main_VCV_conv <- gelman.diag(mcmc.list(mod_full$VCV,
-                                       mod_full2$VCV,
-                                       mod_full3$VCV))
+main_VCV_conv <- gelman.diag(mcmc.list(mod_full$VCV,mod_full2$VCV))
 main_VCV_conv
 
 ```
 
 
-Overall Synthetic chemicals have a significant overall positive outcome at a 
-ratio of 2.7/1 when compared to the treatment compared to control. This is 
-significantly higher when compared to biological controls which only have a 
-positive outcome effect at a ratio of 1.3/1 when compared to the control.
-
-There is some weak support that organic chemicals have less of an effect 
-compared to synthetic chemicals with a ratio of 2.4/1, however this is not 
-significantly different.
-
-Both Physical and Mixed treatments are found to have reduced effects on outcomes 
-when compared to synthetic chemicals, however neither are significantly different.
-Finally, there is weak support that treatments have higher positive outcomes when 
-tested in lab based setting, however, this is also not significant.
-
-
-
-We can do a simple plot of our results. 
-
+We can do a simple plot of our results. I need to fix this graph up some more.
 
 ```{r main plot}
 
@@ -794,15 +825,33 @@ points(median(Full_comb_data[Full_comb_data$chem_split == "Mixed", "logratio"])
        col = "black",
        cex = 1.3)
 
+
+
 ```
 
 
+Overall Synthetic chemicals have a significant overall positive outcome at a 
+ratio of 2.7/1 when compared to the treatment compared to control. This is
+significantly higher when compared to biological controls which only have a 
+positive outcome effect at a ratio of 1.3/1 when compared to the control.
 
-#Main model with bee breed included
+There is some weak support that organic chemicals have less of an effect
+compared to synthetic chemicals with a ratio of 2.4/1, however this is not 
+significantly different.
+
+Both Physical and Mixed treatments are found to have reduced effects on outcomes
+when compared to synthetic chemicals, however neither are significantly 
+different.
+
+Finally, there is weak support that treatments have higher positive outcomes 
+when tested in lab based setting, however, this is also not significant.
+
+
+## Main model with bee breed included
 
 We now run the model with studies that have defined the breed of bee.
 
-```{r mcmcglmm breed}
+```{r mcmcglmm breeds}
 
 Full_breed <-  Full_comb_data[Full_comb_data$Lineage != "Apis_mellifera",]
 
@@ -865,7 +914,7 @@ summary(mod_full_breed)
 
 We can check for convergence using gelman.diag(). Values 
 
-```{r full conv breed, include=FALSE}
+```{r breed conv, include=T}
 
 #Check the fixed terms
 mainB_Sol_conv <- gelman.diag(mcmc.list(mod_full_breed$Sol,
@@ -881,8 +930,6 @@ mainB_VCV_conv
 
 ```
 
-
-Bee breed has no effects on the log ratio value.
 
 
 
@@ -1262,6 +1309,153 @@ points(median(All_varroa_data[All_varroa_data$chem_split == "Mixed",
 
 
 # Chemical treatment sub analysis
+# Dosage dependance
+
+Taking from the Full_comb_data, which has the signs flipped so any positive
+number is a positive effect for bees (i.e. decreased bee mortality is now a 
+positive number) we create a subset for data that has some measure of dosage.
+To allow for comparisons we include dosage as low medium high as either 
+described in the paper.
+
+```{r dosage ordinal}
+
+Full_dosage <- data.frame(logratio = Full_comb_data$logratio,
+                          StudyID = Full_comb_data$StudyID,
+                          SubCa2Treat = Full_comb_data$SubCategory2Treatment,
+                          Dosage_level = factor(Full_comb_data$Dosage_level),
+                          Continent = Full_comb_data$Continent,
+                          Country = Full_comb_data$Country,
+                          Cont_Country = Full_comb_data$Cont_Country,
+                          Context = Full_comb_data$Context)
+
+Full_dosage <- na.omit(Full_dosage)
+
+```
+
+
+Ordinal dosage analysis.
+
+```{r dosage ordinal model}
+
+
+mod_dos <- MCMCglmm(logratio ~ Dosage_level + Context,
+                                 rcov=~units,
+                                 random =~StudyID,
+                                 family ="gaussian",
+                                 data = Full_dosage,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 verbose = FALSE
+                            )
+
+mod_dos2 <- MCMCglmm(logratio ~ Dosage_level + Context,
+                                 rcov=~units,
+                                 random =~StudyID ,
+                                 family ="gaussian",
+                                 data = Full_dosage,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 verbose = FALSE
+                            )
+
+mod_dos3 <- MCMCglmm(logratio ~ Dosage_level + Context,
+                                 rcov=~units,
+                                 random =~StudyID ,
+                                 family ="gaussian",
+                                 data = Full_dosage,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 verbose = FALSE
+                            )
+
+
+#Check the fixed terms
+mod_dos_Sol_conv <- gelman.diag(mcmc.list(mod_dos$Sol,
+                                               mod_dos2$Sol,
+                                               mod_dos3$Sol))
+mod_dos_Sol_conv
+
+#Check the random terms
+mod_dos_VCV_conv <- gelman.diag(mcmc.list(mod_dos$VCV,
+                                               mod_dos2$VCV,
+                                               mod_dos3$VCV))
+mod_dos_VCV_conv
+
+
+
+summary(mod_dos)
+```
+
+When comparing dosages there is some support that the lowest dosages (2.1/1) are 
+less effective compared to the highest dosages (2.6/1) with no significant
+difference between the highest and medium levels of dosages. Note that there are 
+only 24 studies in this analysis so it cannot really be broken down more.
+
+
+We can do a simple plot of our results.
+
+```{r main plot Full_dosage}
+
+plot(Full_dosage$logratio ~ factor(Full_dosage$Dosage_level),
+     col ="black",
+     bty = "n",
+     boxwex = 0.05,
+     ylab = "log ratio",
+     xlab = "Treatment type",
+     pch = 16,
+     cex = 0,
+     names = c("Low", "Medium", "High"))
+
+#We can plot the points for LOW
+points(Full_dosage[Full_dosage$Dosage_level == "LOW", "logratio"] ~ 
+         jitter(as.integer(Full_dosage[Full_dosage$Dosage_level == "LOW", 
+                                       "Dosage_level"]),
+                  amount = 0.1),
+       pch = 16,
+       col = rgb(236, 143, 94, max=255),
+       cex = 0.5)
+
+points(median(Full_dosage[Full_dosage$Dosage_level == "LOW", "logratio"]) 
+       ~ c(1),
+       pch = 16,
+       col = "black",
+       cex = 1.3)
+
+
+#We can plot the points for MEDIUM
+points(Full_dosage[Full_dosage$Dosage_level == "MEDIUM", "logratio"] ~ 
+         jitter(as.integer(Full_dosage[Full_dosage$Dosage_level == "MEDIUM",
+                                       "Dosage_level"]),
+       amount = 0.1),
+       pch = 16,
+       col = rgb(243, 182, 100, max=255),
+       cex = 0.5)
+
+points(median(Full_dosage[Full_dosage$Dosage_level == "MEDIUM", "logratio"]) 
+       ~ c(2),
+       pch = 16,
+       col = "black",
+       cex = 1.3)
+
+#We can plot the points for HIGH
+points(Full_dosage[Full_dosage$Dosage_level == "HIGH", "logratio"] ~ 
+         jitter(as.integer(Full_dosage[Full_dosage$Dosage_level == "HIGH",                                           "Dosage_level"]),
+                  amount = 0.1),
+       pch = 16,
+       col = rgb(33, 156, 144, max=255),
+       cex = 0.5)
+
+points(median(Full_dosage[Full_dosage$Dosage_level == "HIGH", "logratio"]) 
+       ~ c(3),
+       pch = 16,
+       col = "black",
+       cex = 1.3)
+
+```
+
 
 # break down each of the chemicals
 
@@ -2361,7 +2555,7 @@ Full_dosage <- na.omit(Full_dosage)
 
 
 
-```{r dosage ordinal model}
+```{r dosage varroa ordinal model}
 
 
 mod_dos <- MCMCglmm(logratio ~ Dosage_level + Context,
@@ -2423,7 +2617,7 @@ only 24 studies in this analysis so it cannot really be broken down more.
 
 We can do a simple plot of our results.
 
-```{r main plot Full_dosage}
+```{r varroa plot Full_dosage}
 
 plot(Full_dosage$logratio ~ factor(Full_dosage$Dosage_level),
      col ="black",
@@ -2481,3 +2675,427 @@ points(median(Full_dosage[Full_dosage$Dosage_level == "HIGH", "logratio"])
        cex = 1.3)
 
 ```
+
+
+
+
+
+
+#Models without Coumaphos
+#Main model
+
+To check if the results were dependent on Coumaphos we will rerun the main
+models without this chemical
+
+```{r remove Coumaphos data }
+
+Full_comb_nc <- Full_comb_data[Full_comb_data$broadTreatment != "Coumaphos",]
+
+```
+
+```{r main no Coumaphos}
+
+mod_full_nc <- MCMCglmm(logratio ~ chem_split
+                                + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control
+                                          + Continent
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_comb_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = F )
+
+#second model acts as second chain for convergence
+mod_full_nc2 <- MCMCglmm(logratio ~ chem_split
+                                  + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control
+                                          + Continent
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_comb_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = F )
+
+#second model acts as second chain for convergence #Add a 3rd later for final check
+mod_full_nc3 <- MCMCglmm(logratio ~ chem_split
+                                  + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control
+                                          + Continent
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Full_comb_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = F )
+
+summary(mod_full_nc)
+```
+
+
+We can check for convergence using gelman.diag().
+
+```{r full convergance no Coumaphos, include=FALSE}
+
+#Check the fixed terms
+main_Sol_conv_nc <- gelman.diag(mcmc.list(mod_full_nc$Sol,
+                                       mod_full_nc2$Sol,
+                                       mod_full_nc3$Sol))
+main_Sol_conv_nc
+
+#Check the random terms
+main_VCV_conv_nc <- gelman.diag(mcmc.list(mod_full_nc$VCV,
+                                       mod_full_nc2$VCV,
+                                       mod_full_nc3$VCV))
+main_VCV_conv_nc
+
+```
+
+
+Overall Synthetic chemicals have a significant overall positive outcome at a 
+ratio of X/1 when compared to the treatment compared to control. This is 
+significantly higher when compared to biological controls which only have a 
+positive outcome effect at a ratio of X/1 when compared to the control.
+
+There is some weak support that organic chemicals have less of an effect 
+compared to synthetic chemicals with a ratio of X/1, however this is not 
+significantly different.
+
+Both Physical and Mixed treatments are found to have reduced effects on outcomes 
+when compared to synthetic chemicals, however neither are significantly different.
+Finally, there is weak support that treatments have higher positive outcomes when 
+tested in lab based setting, however, this is also not significant.
+
+
+
+
+
+# Model without Coumaphos effects just on bees
+We can also repeat the main model with just bees included without Coumaphos.  
+This is with both increases and decreases combined but with the decreases pop 
+data sign flipped so now any positive value is also a positive indicator for bee 
+population or health.
+
+```{r bee all no Coumaphos}
+
+All_bees_data <- rbind(HoneyBeeReduction_paired_red_fin, 
+                       HoneyBeeIncrease_paired_fin)
+
+All_bees_data_nc <- All_bees_data[All_bees_data$broadTreatment != "Coumaphos",]
+
+
+mod_all_bees_nc <- MCMCglmm(logratio ~ chem_split
+                                  + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_bees_data_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+
+mod_all_bees_nc2 <- MCMCglmm(logratio ~ chem_split
+                          + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_bees_data_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+mod_all_bees_nc3 <- MCMCglmm(logratio ~ chem_split
+                          + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_bees_data_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+#Check the fixed terms
+mod_all_bees_Sol_conv_nc <- gelman.diag(mcmc.list(mod_all_bees_nc$Sol,
+                                               mod_all_bees_nc2$Sol,
+                                               mod_all_bees_nc3$Sol))
+mod_all_bees_Sol_conv_nc
+
+#Check the random terms
+mod_all_bees_VCV_conv_nc <- gelman.diag(mcmc.list(mod_all_bees_nc$VCV,
+                                               mod_all_bees_nc2$VCV,
+                                               mod_all_bees_nc3$VCV))
+mod_all_bees_VCV_conv_nc
+
+
+summary(mod_all_bees_nc)
+
+```
+
+Synthetic chemical are not found to significantly effect bee pops when compared 
+to the Null, but there is some weak evidence they have perform worse than the 
+control at a ratio xx/1 and that organic chemicals are less harmful compared to
+syththic at xxx/1.
+
+
+
+
+# Main model with effects just on Varrora
+
+We can also do the main model with just Varroa data included. Here we include 
+both studies that measure  increases or decreases in Varroa population or 
+health data. Again the log ratio is calculated so that a positive value indicates
+a positive outcome for bee health/populations (that is a reduction in Varroa is
+indicated in positive terms.).
+
+
+```{r Varroa both split no Coumaphos}
+
+All_varroa_data <- rbind(VarroaReduction_paired_fin, 
+                       VarroaIncrease_paired_red_fin)
+
+All_varroa_data_nc <- All_varroa_data[All_varroa_data$broadTreatment != "Coumaphos",]
+
+
+All_varroa_data_mod_nc <- MCMCglmm(logratio ~ chem_split
+                                + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+All_varroa_data_mod_nc2 <- MCMCglmm(logratio ~ chem_split
+                                 + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+All_varroa_data_mod_nc3 <- MCMCglmm(logratio ~ chem_split
+                                 + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data_nc,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+#Check the fixed terms
+All_varroa_data_mod_Sol_conv_nc <- gelman.diag(mcmc.list(All_varroa_data_mod_nc$Sol,
+                                               All_varroa_data_mod_nc2$Sol,
+                                               All_varroa_data_mod_nc3$Sol))
+All_varroa_data_mod_Sol_conv_nc
+
+#Check the random terms
+All_varroa_data_mod_VCV_conv_nc <- gelman.diag(mcmc.list(All_varroa_data_mod_nc$VCV,
+                                               All_varroa_data_mod_nc2$VCV,
+                                               All_varroa_data_mod_nc3$VCV))
+All_varroa_data_mod_VCV_conv_nc
+
+
+summary(All_varroa_data_mod_nc)
+```
+
+
+
+#Varroa mortality models
+
+Model Varroa on just mortality measures
+
+```{r Varroa mortality}
+
+All_varroa_data <- rbind(VarroaReduction_paired_fin, 
+                       VarroaIncrease_paired_red_fin)
+
+All_varroa_data_mort <- All_varroa_data[All_varroa_data$BroadResponseVariable == "Varroa_mortality",]
+
+
+
+All_varroa_data_mod_mort  <- MCMCglmm(logratio ~ chem_split
+                                + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data_mort,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+All_varroa_data_mod_mort2 <- MCMCglmm(logratio ~ chem_split
+                                 + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data_mort,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+All_varroa_data_mod_mort3 <- MCMCglmm(logratio ~ chem_split
+                                 + Context,
+                                 rcov=~units,
+                                 random =~StudyID_control 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = All_varroa_data_mort,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+#Check the fixed terms
+All_varroa_data_mod_Sol_conv_mort <- gelman.diag(mcmc.list(All_varroa_data_mod_mort$Sol,
+                                               All_varroa_data_mod_mort2$Sol,
+                                               All_varroa_data_mod_mort3$Sol))
+All_varroa_data_mod_Sol_conv_mort
+
+#Check the random terms
+All_varroa_data_mod_VCV_conv_mort <- gelman.diag(mcmc.list(All_varroa_data_mod_mort$VCV,
+                                               All_varroa_data_mod_mort2$VCV,
+                                               All_varroa_data_mod_mort3$VCV))
+All_varroa_data_mod_VCV_conv_mort
+
+
+summary(All_varroa_data_mod_mort)
+```
+
+
+#Effects of specific chemicals on mortality of Varrora
+
+```{r chem specific model mort}
+
+Sub_chem_mort <- Sub_chem[Sub_chem$BroadResponseVariable == "Varroa_mortality",]
+
+mod_spec_chem_mort <- MCMCglmm(logratio ~ broadTreatment + Context,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_mort,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+mod_spec_chem_mort2 <- MCMCglmm(logratio ~ broadTreatment + Context,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_mort,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+mod_spec_chem_mort3 <- MCMCglmm(logratio ~ broadTreatment + Context,
+                                 rcov=~units,
+                                 random =~StudyID 
+                                          + Continent 
+                                          + Cont_Country,
+                                 family ="gaussian",
+                                 data = Sub_chem_mort,
+                                 nitt = nitt,
+                                 thin = thining,
+                                 burnin = burnin,
+                                 prior = prior_d,
+                                 verbose = FALSE
+                            )
+
+
+
+#Check the fixed terms
+mod_spec_chem_Sol_conv_mort <- gelman.diag(mcmc.list(mod_spec_chem_mort$Sol,
+                                               mod_spec_chem_mort2$Sol,
+                                               mod_spec_chem_mort3$Sol))
+mod_spec_chem_Sol_conv_mort
+
+#Check the random terms
+mod_spec_chem_VCV_conv_mort <- gelman.diag(mcmc.list(mod_spec_chem_mort$VCV,
+                                               mod_spec_chem_mort2$VCV,
+                                               mod_spec_chem_mort3$VCV))
+mod_spec_chem_VCV_conv_mort
+
+
+
+summary(mod_spec_chem_mort)
+```
+
+Coumaphos is significantly less effective compared to Amitraz at a ratio of 
+0.57/1 with all other chemicals not different. There is some evidence that Formic
+acid is also less effective.
+
+
